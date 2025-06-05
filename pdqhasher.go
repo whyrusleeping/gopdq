@@ -97,6 +97,15 @@ func DecodeJpeg(r io.Reader) (image.Image, error) {
 	return img, nil
 }
 
+func (h *PdqHasher) FromJpeg(r io.Reader) (*HashResult, error) {
+	img, err := DecodeJpeg(r)
+	if err != nil {
+		return nil, err
+	}
+
+	return h.HashImage(img)
+}
+
 func (h *PdqHasher) FromReader(r io.Reader) (*HashResult, error) {
 	img, _, err := image.Decode(r)
 	if err != nil {
