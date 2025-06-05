@@ -3,7 +3,6 @@ package gopdq
 import (
 	"bytes"
 	"fmt"
-	"image"
 	_ "image/jpeg"
 	"os"
 	"testing"
@@ -35,7 +34,7 @@ func BenchmarkHashing(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	img, _, err := image.Decode(bytes.NewReader(data))
+	img, err := DecodeJpeg(bytes.NewReader(data))
 	if err != nil {
 		b.Fatal(err)
 	}

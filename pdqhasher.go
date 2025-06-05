@@ -1,11 +1,5 @@
 package gopdq
 
-/*
-#cgo CFLAGS: -mavx2 -O3
-#include "simd_vectorized.h"
-*/
-import "C"
-
 import (
 	"fmt"
 	"image"
@@ -15,7 +9,8 @@ import (
 	"io"
 	"math"
 	"os"
-	"unsafe"
+
+	ljpeg "github.com/pixiv/go-libjpeg/jpeg"
 )
 
 const (
@@ -30,15 +25,6 @@ const (
 type HashResult struct {
 	Hash    *PdqHash256
 	Quality int
-	Stats   HashingStatistics
-}
-
-// HashingStatistics contains timing and performance metrics
-type HashingStatistics struct {
-	ReadSeconds float32
-	HashSeconds float32
-	NumPixels   int
-	Source      string
 }
 
 // HashAndQuality is an internal struct for hash generation
@@ -86,33 +72,56 @@ func (h *PdqHasher) FromFile(filePath string) (*HashResult, error) {
 	return h.FromReader(file)
 }
 
+func DecodeJpeg(r io.Reader) (image.Image, error) {
+	var img image.Image
+	if ljpeg.SupportRGBA() {
+		ljimg, err := ljpeg.DecodeIntoRGBA(r, &ljpeg.DecoderOptions{
+			DCTMethod:              ljpeg.DCTIFast,
+			DisableFancyUpsampling: false,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode image: %w", err)
+		}
+		img = ljimg
+	} else {
+		ljimg, err := ljpeg.Decode(r, &ljpeg.DecoderOptions{
+			DCTMethod:              ljpeg.DCTIFast,
+			DisableFancyUpsampling: false,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode image: %w", err)
+		}
+		img = ljimg
+	}
+
+	return img, nil
+}
+
 func (h *PdqHasher) FromReader(r io.Reader) (*HashResult, error) {
-	// Decode image
 	img, _, err := image.Decode(r)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode image: %w", err)
+		return nil, err
 	}
 
 	return h.HashImage(img)
 }
 
 func (h *PdqHasher) HashImage(img image.Image) (*HashResult, error) {
-	bounds := img.Bounds()
 	//width := min(bounds.Dx(), 1024)
 	//height := min(bounds.Dy(), 1024)
-	width := bounds.Dx()
-	height := bounds.Dy()
 
 	var resized image.Image = img
 	// Resize if needed (simple nearest neighbor for now)
 	/*
+		bounds := img.Bounds()
 		if bounds.Dx() > 1024 || bounds.Dy() > 1024 {
 			resized = resize.Resize(uint(width), uint(height), img, resize.NearestNeighbor)
 			//resized = resizeImage(img, width, height)
 		}
 	*/
 
-	numPixels := width * height
+	width := resized.Bounds().Dx()
+	height := resized.Bounds().Dy()
 
 	// Process image
 
@@ -127,9 +136,6 @@ func (h *PdqHasher) HashImage(img image.Image) (*HashResult, error) {
 	return &HashResult{
 		Hash:    result.Hash,
 		Quality: result.Quality,
-		Stats: HashingStatistics{
-			NumPixels: numPixels,
-		},
 	}, nil
 }
 
@@ -139,13 +145,16 @@ func (h *PdqHasher) fillFloatLumaFromImage(img image.Image, luma []float32) {
 	numCols := bounds.Dx()
 	numRows := bounds.Dy()
 
-	rgbaImg := image.NewRGBA(img.Bounds())
-	draw.Draw(rgbaImg, rgbaImg.Bounds(), img, img.Bounds().Min, draw.Src)
+	var rgbaImg *image.RGBA
+	if rgbaSrc, ok := img.(*image.RGBA); ok {
+		rgbaImg = rgbaSrc
+	} else {
+		rgbaImg = image.NewRGBA(img.Bounds())
+		draw.Draw(rgbaImg, rgbaImg.Bounds(), img, img.Bounds().Min, draw.Src)
+	}
 
 	// Now access raw RGBA data
 	stride := rgbaImg.Stride
-
-	//fmt.Println("LEN: ", len(rgbaImg.Pix), numRows, numCols, numRows*numCols*4)
 
 	for row := 0; row < numRows; row++ {
 		for col := 0; col < numCols; col++ {
@@ -164,28 +173,15 @@ func (h *PdqHasher) pdqHash256FromFloatLuma(buffer1, buffer2 []float32, numRows,
 	windowSizeAlongRows := computeJaroszFilterWindowSize(numCols)
 	windowSizeAlongCols := computeJaroszFilterWindowSize(numRows)
 
-	//*
-	C.jaroszFilterFloat(
-		(*C.float)(unsafe.Pointer(&buffer1[0])),
-		(*C.float)(unsafe.Pointer(&buffer2[0])),
-		(C.int)(numRows),
-		(C.int)(numCols),
-		(C.int)(windowSizeAlongRows),
-		(C.int)(windowSizeAlongCols),
-		(C.int)(PDQ_NUM_JAROSZ_XY_PASSES),
+	jaroszFilterFloat(
+		buffer1,
+		buffer2,
+		numRows,
+		numCols,
+		windowSizeAlongRows,
+		windowSizeAlongCols,
+		PDQ_NUM_JAROSZ_XY_PASSES,
 	)
-	//*/
-	/*
-		jaroszFilterFloat(
-			buffer1,
-			buffer2,
-			numRows,
-			numCols,
-			windowSizeAlongRows,
-			windowSizeAlongCols,
-			PDQ_NUM_JAROSZ_XY_PASSES,
-		)
-		//*/
 
 	decimateFloat(buffer1, numRows, numCols, buffer64x64)
 	quality := computePDQImageDomainQualityMetric(buffer64x64)
@@ -421,15 +417,6 @@ func box1DFloat(invec []float32, outVec []float32, vectorLength, stride, fullWin
 		li += stride
 		oi += stride
 	}
-}
-
-func vectorizedDiv(out, num, denom []float32) {
-	// Use SIMD-optimized C function
-	C.simd_vectorized_div(
-		(*C.float)(unsafe.Pointer(&out[0])),
-		(*C.float)(unsafe.Pointer(&num[0])),
-		(*C.float)(unsafe.Pointer(&denom[0])),
-	)
 }
 
 // computeJaroszFilterWindowSize calculates the window size for Jarosz filter
