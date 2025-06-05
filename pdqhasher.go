@@ -286,10 +286,8 @@ func jaroszFilterFloat(buffer1, buffer2 []float32, numRows, numCols, windowSizeA
 func boxAlongRowsFloat(input, output []float32, numRows, numCols, windowSize int) {
 	for i := 0; i < numRows; i++ {
 		box1DFloat(
-			input,
-			i*numCols,
-			output,
-			i*numCols,
+			input[i*numCols:],
+			output[i*numCols:],
 			numCols,
 			1,
 			windowSize,
@@ -300,12 +298,12 @@ func boxAlongRowsFloat(input, output []float32, numRows, numCols, windowSize int
 // boxAlongColsFloat applies 1D box filter along columns
 func boxAlongColsFloat(input, output []float32, numRows, numCols, windowSize int) {
 	for j := 0; j < numCols; j++ {
-		box1DFloat(input, j, output, j, numRows, numCols, windowSize)
+		box1DFloat(input[j:], output[j:], numRows, numCols, windowSize)
 	}
 }
 
 // box1DFloat performs 1D box filtering
-func box1DFloat(invec []float32, inStartOffset int, outVec []float32, outStartOffset int, vectorLength, stride, fullWindowSize int) {
+func box1DFloat(invec []float32, outVec []float32, vectorLength, stride, fullWindowSize int) {
 	halfWindowSize := (fullWindowSize + 2) / 2
 	phase1Nreps := halfWindowSize - 1
 	phase2Nreps := fullWindowSize - halfWindowSize + 1
@@ -316,29 +314,29 @@ func box1DFloat(invec []float32, inStartOffset int, outVec []float32, outStartOf
 	ri := 0 // Index of right edge of read window
 	oi := 0 // Index into output vector
 	sum := float32(0.0)
-	currentWindowSize := 0
+	currentWindowSize := float32(0)
 
 	// Phase 1: Initial accumulation
 	for i := 0; i < phase1Nreps; i++ {
-		sum += invec[inStartOffset+ri]
+		sum += invec[ri]
 		currentWindowSize++
 		ri += stride
 	}
 
 	// Phase 2: Initial writes with small window
 	for i := 0; i < phase2Nreps; i++ {
-		sum += invec[inStartOffset+ri]
+		sum += invec[ri]
 		currentWindowSize++
-		outVec[outStartOffset+oi] = sum / float32(currentWindowSize)
+		outVec[oi] = sum / currentWindowSize
 		ri += stride
 		oi += stride
 	}
 
 	// Phase 3: Writes with full window
 	for i := 0; i < phase3Nreps; i++ {
-		sum += invec[inStartOffset+ri]
-		sum -= invec[inStartOffset+li]
-		outVec[outStartOffset+oi] = sum / float32(currentWindowSize)
+		sum += invec[ri]
+		sum -= invec[li]
+		outVec[oi] = sum / currentWindowSize
 		li += stride
 		ri += stride
 		oi += stride
@@ -346,9 +344,9 @@ func box1DFloat(invec []float32, inStartOffset int, outVec []float32, outStartOf
 
 	// Phase 4: Final writes with small window
 	for i := 0; i < phase4Nreps; i++ {
-		sum -= invec[inStartOffset+li]
+		sum -= invec[li]
 		currentWindowSize--
-		outVec[outStartOffset+oi] = sum / float32(currentWindowSize)
+		outVec[oi] = sum / currentWindowSize
 		li += stride
 		oi += stride
 	}
