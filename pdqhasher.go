@@ -91,14 +91,19 @@ func (h *PdqHasher) FromReader(r io.Reader) (*HashResult, error) {
 
 func (h *PdqHasher) HashImage(img image.Image) (*HashResult, error) {
 	bounds := img.Bounds()
-	width := min(bounds.Dx(), 1024)
-	height := min(bounds.Dy(), 1024)
+	//width := min(bounds.Dx(), 1024)
+	//height := min(bounds.Dy(), 1024)
+	width := bounds.Dx()
+	height := bounds.Dy()
 
-	// Resize if needed (simple nearest neighbor for now)
 	var resized image.Image = img
-	if bounds.Dx() > 1024 || bounds.Dy() > 1024 {
-		resized = resizeImage(img, width, height)
-	}
+	// Resize if needed (simple nearest neighbor for now)
+	/*
+		if bounds.Dx() > 1024 || bounds.Dy() > 1024 {
+			resized = resize.Resize(uint(width), uint(height), img, resize.NearestNeighbor)
+			//resized = resizeImage(img, width, height)
+		}
+	*/
 
 	numPixels := width * height
 
@@ -135,8 +140,8 @@ func (h *PdqHasher) fillFloatLumaFromImage(img image.Image, luma []float32) {
 
 	//fmt.Println("LEN: ", len(rgbaImg.Pix), numRows, numCols, numRows*numCols*4)
 
-	for col := 0; col < numCols; col++ {
-		for row := 0; row < numRows; row++ {
+	for row := 0; row < numRows; row++ {
+		for col := 0; col < numCols; col++ {
 			offs := (row * stride) + (col * 4)
 			r8 := float32(rgbaImg.Pix[offs])
 			g8 := float32(rgbaImg.Pix[offs+1])

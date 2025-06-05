@@ -2,6 +2,7 @@ package gopdq
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	_ "image/jpeg"
 	"os"
@@ -17,7 +18,13 @@ func TestKnownImage(t *testing.T) {
 	}
 
 	exp := "06704e1dd910f233c0e6df833130b0ff99e36701383d333ac7c6078fe736dccc"
-	if res.Hash.String() != exp {
+	got := res.Hash.String()
+	if got != exp {
+		for i := 0; i < len(exp); i++ {
+			if got[i] != exp[i] {
+				fmt.Printf("mismatch at index %d: %s\n", i, got[i:i+1])
+			}
+		}
 		t.Fatal("hash mismatch: ", res.Hash.String(), exp)
 	}
 }
