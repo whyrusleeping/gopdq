@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	HASH256NUMSLOTS          = 16
+	HASH256NUMSLOTS         = 16
 	HASH256_HEX_NUM_NYBBLES = 4 * HASH256NUMSLOTS
 )
 

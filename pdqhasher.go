@@ -1,5 +1,11 @@
 package gopdq
 
+/*
+#cgo CFLAGS: -mavx2 -O3
+#include "simd_vectorized.h"
+*/
+import "C"
+
 import (
 	"fmt"
 	"image"
@@ -9,6 +15,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"unsafe"
 )
 
 const (
@@ -157,15 +164,28 @@ func (h *PdqHasher) pdqHash256FromFloatLuma(buffer1, buffer2 []float32, numRows,
 	windowSizeAlongRows := computeJaroszFilterWindowSize(numCols)
 	windowSizeAlongCols := computeJaroszFilterWindowSize(numRows)
 
-	jaroszFilterFloat(
-		buffer1,
-		buffer2,
-		numRows,
-		numCols,
-		windowSizeAlongRows,
-		windowSizeAlongCols,
-		PDQ_NUM_JAROSZ_XY_PASSES,
+	//*
+	C.jaroszFilterFloat(
+		(*C.float)(unsafe.Pointer(&buffer1[0])),
+		(*C.float)(unsafe.Pointer(&buffer2[0])),
+		(C.int)(numRows),
+		(C.int)(numCols),
+		(C.int)(windowSizeAlongRows),
+		(C.int)(windowSizeAlongCols),
+		(C.int)(PDQ_NUM_JAROSZ_XY_PASSES),
 	)
+	//*/
+	/*
+		jaroszFilterFloat(
+			buffer1,
+			buffer2,
+			numRows,
+			numCols,
+			windowSizeAlongRows,
+			windowSizeAlongCols,
+			PDQ_NUM_JAROSZ_XY_PASSES,
+		)
+		//*/
 
 	decimateFloat(buffer1, numRows, numCols, buffer64x64)
 	quality := computePDQImageDomainQualityMetric(buffer64x64)
@@ -334,58 +354,60 @@ func box1DFloat(invec []float32, outVec []float32, vectorLength, stride, fullWin
 
 	// Phase 3: Writes with full window
 	var i int
-	buf := make([]float32, 8)
-	denom := make([]float32, 8)
-	out := make([]float32, 8)
-	for j := 0; j < 8; j++ {
-		denom[j] = currentWindowSize
-	}
+	/*
+		buf := make([]float32, 8)
+		denom := make([]float32, 8)
+		out := make([]float32, 8)
+		for j := 0; j < 8; j++ {
+			denom[j] = currentWindowSize
+		}
 
-	for ; i+8 < phase3Nreps; i += 8 {
-		//sum += invec[ri]
-		//sum -= invec[li]
+		for ; i+8 < phase3Nreps; i += 8 {
+			//sum += invec[ri]
+			//sum -= invec[li]
 
-		offs := 0
-		buf[0] = sum + invec[ri+(stride*0)] - invec[li+(stride*0)]
-		buf[1] = buf[0] + invec[ri+(stride*1)] - invec[li+(stride*1)]
-		buf[2] = buf[1] + invec[ri+(stride*2)] - invec[li+(stride*2)]
-		buf[3] = buf[2] + invec[ri+(stride*3)] - invec[li+(stride*3)]
-		buf[4] = buf[3] + invec[ri+(stride*4)] - invec[li+(stride*4)]
-		buf[5] = buf[4] + invec[ri+(stride*5)] - invec[li+(stride*5)]
-		buf[6] = buf[5] + invec[ri+(stride*6)] - invec[li+(stride*6)]
-		buf[7] = buf[6] + invec[ri+(stride*7)] - invec[li+(stride*7)]
+			buf[0] = sum + invec[ri+(stride*0)] - invec[li+(stride*0)]
+			buf[1] = buf[0] + invec[ri+(stride*1)] - invec[li+(stride*1)]
+			buf[2] = buf[1] + invec[ri+(stride*2)] - invec[li+(stride*2)]
+			buf[3] = buf[2] + invec[ri+(stride*3)] - invec[li+(stride*3)]
+			buf[4] = buf[3] + invec[ri+(stride*4)] - invec[li+(stride*4)]
+			buf[5] = buf[4] + invec[ri+(stride*5)] - invec[li+(stride*5)]
+			buf[6] = buf[5] + invec[ri+(stride*6)] - invec[li+(stride*6)]
+			buf[7] = buf[6] + invec[ri+(stride*7)] - invec[li+(stride*7)]
 
-		/*
-			outVec[oi] = buf[0] / currentWindowSize
-			outVec[oi+(stride*1)] = buf[1] / currentWindowSize
-			outVec[oi+(stride*2)] = buf[2] / currentWindowSize
-			outVec[oi+(stride*3)] = buf[3] / currentWindowSize
-			outVec[oi+(stride*4)] = buf[4] / currentWindowSize
-			outVec[oi+(stride*5)] = buf[5] / currentWindowSize
-			outVec[oi+(stride*6)] = buf[6] / currentWindowSize
-			outVec[oi+(stride*7)] = buf[7] / currentWindowSize
-		*/
-		vectorizedDiv(out, buf, denom)
-		outVec[oi] = out[0]
-		outVec[oi+(stride*1)] = out[1]
-		outVec[oi+(stride*2)] = out[2]
-		outVec[oi+(stride*3)] = out[3]
-		outVec[oi+(stride*4)] = out[4]
-		outVec[oi+(stride*5)] = out[5]
-		outVec[oi+(stride*6)] = out[6]
-		outVec[oi+(stride*7)] = out[7]
+			/*
+				outVec[oi] = buf[0] / currentWindowSize
+				outVec[oi+(stride*1)] = buf[1] / currentWindowSize
+				outVec[oi+(stride*2)] = buf[2] / currentWindowSize
+				outVec[oi+(stride*3)] = buf[3] / currentWindowSize
+				outVec[oi+(stride*4)] = buf[4] / currentWindowSize
+				outVec[oi+(stride*5)] = buf[5] / currentWindowSize
+				outVec[oi+(stride*6)] = buf[6] / currentWindowSize
+				outVec[oi+(stride*7)] = buf[7] / currentWindowSize
+	*/ /*
+			vectorizedDiv(out, buf, denom)
+			outVec[oi] = out[0]
+			outVec[oi+(stride*1)] = out[1]
+			outVec[oi+(stride*2)] = out[2]
+			outVec[oi+(stride*3)] = out[3]
+			outVec[oi+(stride*4)] = out[4]
+			outVec[oi+(stride*5)] = out[5]
+			outVec[oi+(stride*6)] = out[6]
+			outVec[oi+(stride*7)] = out[7]
 
-		li += stride * 8
-		ri += stride * 8
-		oi += stride * 8
+			li += stride * 8
+			ri += stride * 8
+			oi += stride * 8
 
-		sum = buf[7]
-	}
+			sum = buf[7]
+		}
+	*/
 
+	denom := 1 / currentWindowSize
 	for ; i < phase3Nreps; i++ {
 		sum += invec[ri]
 		sum -= invec[li]
-		outVec[oi] = sum / currentWindowSize
+		outVec[oi] = sum * denom
 		li += stride
 		ri += stride
 		oi += stride
@@ -402,14 +424,12 @@ func box1DFloat(invec []float32, outVec []float32, vectorLength, stride, fullWin
 }
 
 func vectorizedDiv(out, num, denom []float32) {
-	out[0] = num[0] / denom[0]
-	out[1] = num[1] / denom[1]
-	out[2] = num[2] / denom[2]
-	out[3] = num[3] / denom[3]
-	out[4] = num[4] / denom[4]
-	out[5] = num[5] / denom[5]
-	out[6] = num[6] / denom[6]
-	out[7] = num[7] / denom[7]
+	// Use SIMD-optimized C function
+	C.simd_vectorized_div(
+		(*C.float)(unsafe.Pointer(&out[0])),
+		(*C.float)(unsafe.Pointer(&num[0])),
+		(*C.float)(unsafe.Pointer(&denom[0])),
+	)
 }
 
 // computeJaroszFilterWindowSize calculates the window size for Jarosz filter
