@@ -3,19 +3,19 @@ package gopdq
 import (
 	"fmt"
 	"image"
+	"image/draw"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"math"
 	"os"
-	"time"
 )
 
 const (
-	LUMA_FROM_R_COEFF         = 0.299
-	LUMA_FROM_G_COEFF         = 0.587
-	LUMA_FROM_B_COEFF         = 0.114
-	DCT_MATRIX_SCALE_FACTOR   = math.Sqrt2 / 8.0 // sqrt(2.0 / 64.0)
-	PDQ_NUM_JAROSZ_XY_PASSES  = 2
+	LUMA_FROM_R_COEFF              = 0.299
+	LUMA_FROM_G_COEFF              = 0.587
+	LUMA_FROM_B_COEFF              = 0.114
+	PDQ_NUM_JAROSZ_XY_PASSES       = 2
 	PDQ_JAROSZ_WINDOW_SIZE_DIVISOR = 128
 )
 
@@ -28,10 +28,10 @@ type HashResult struct {
 
 // HashingStatistics contains timing and performance metrics
 type HashingStatistics struct {
-	ReadSeconds  float64
-	HashSeconds  float64
-	NumPixels    int
-	Source       string
+	ReadSeconds float32
+	HashSeconds float32
+	NumPixels   int
+	Source      string
 }
 
 // HashAndQuality is an internal struct for hash generation
@@ -42,13 +42,13 @@ type HashAndQuality struct {
 
 // PdqHasher is the main hasher implementation
 type PdqHasher struct {
-	dctMatrix []float64 // 16x64 matrix stored as 1D array
+	dctMatrix []float32 // 16x64 matrix stored as 1D array
 }
 
 // NewPdqHasher creates a new PdqHasher instance
 func NewPdqHasher() *PdqHasher {
 	h := &PdqHasher{
-		dctMatrix: make([]float64, 16*64),
+		dctMatrix: make([]float32, 16*64),
 	}
 	h.computeDCTMatrix()
 	return h
@@ -56,9 +56,10 @@ func NewPdqHasher() *PdqHasher {
 
 // computeDCTMatrix initializes the DCT transformation matrix
 func (h *PdqHasher) computeDCTMatrix() {
+	matrixScaleFactor := float32(math.Sqrt(2.0 / 64.0))
 	for i := 0; i < 16; i++ {
 		for j := 0; j < 64; j++ {
-			h.dctMatrix[i*64+j] = DCT_MATRIX_SCALE_FACTOR * math.Cos(math.Pi/2/64*float64(i+1)*float64(2*j+1))
+			h.dctMatrix[i*64+j] = matrixScaleFactor * float32(math.Cos((math.Pi/2.0/64.0)*float64(i+1)*float64(2*j+1)))
 		}
 	}
 }
@@ -75,14 +76,20 @@ func (h *PdqHasher) FromFile(filePath string) (*HashResult, error) {
 	}
 	defer file.Close()
 
-	startTime := time.Now()
-	
+	return h.FromReader(file)
+}
+
+func (h *PdqHasher) FromReader(r io.Reader) (*HashResult, error) {
 	// Decode image
-	img, _, err := image.Decode(file)
+	img, _, err := image.Decode(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode image: %w", err)
 	}
 
+	return h.HashImage(img)
+}
+
+func (h *PdqHasher) HashImage(img image.Image) (*HashResult, error) {
 	bounds := img.Bounds()
 	width := min(bounds.Dx(), 1024)
 	height := min(bounds.Dy(), 1024)
@@ -93,56 +100,55 @@ func (h *PdqHasher) FromFile(filePath string) (*HashResult, error) {
 		resized = resizeImage(img, width, height)
 	}
 
-	readSeconds := time.Since(startTime).Seconds()
 	numPixels := width * height
 
 	// Process image
-	hashStart := time.Now()
-	
-	buffer1 := make([]float64, height*width)
-	buffer2 := make([]float64, height*width)
-	buffer64x64 := make([]float64, 64*64)
-	buffer16x16 := make([]float64, 16*16)
+
+	buffer1 := make([]float32, height*width)
+	buffer2 := make([]float32, height*width)
+	buffer64x64 := make([]float32, 64*64)
+	buffer16x16 := make([]float32, 16*16)
 
 	h.fillFloatLumaFromImage(resized, buffer1)
 	result := h.pdqHash256FromFloatLuma(buffer1, buffer2, height, width, buffer64x64, buffer16x16)
-
-	hashSeconds := time.Since(hashStart).Seconds()
 
 	return &HashResult{
 		Hash:    result.Hash,
 		Quality: result.Quality,
 		Stats: HashingStatistics{
-			ReadSeconds: readSeconds,
-			HashSeconds: hashSeconds,
-			NumPixels:   numPixels,
-			Source:      filePath,
+			NumPixels: numPixels,
 		},
 	}, nil
 }
 
 // fillFloatLumaFromImage converts image pixels to luminance values
-func (h *PdqHasher) fillFloatLumaFromImage(img image.Image, luma []float64) {
+func (h *PdqHasher) fillFloatLumaFromImage(img image.Image, luma []float32) {
 	bounds := img.Bounds()
 	numCols := bounds.Dx()
 	numRows := bounds.Dy()
 
-	for row := 0; row < numRows; row++ {
-		for col := 0; col < numCols; col++ {
-			c := img.At(bounds.Min.X+col, bounds.Min.Y+row)
-			r, g, b, _ := c.RGBA()
-			// Convert to 8-bit values
-			r8 := float64(r >> 8)
-			g8 := float64(g >> 8)
-			b8 := float64(b >> 8)
-			
+	rgbaImg := image.NewRGBA(img.Bounds())
+	draw.Draw(rgbaImg, rgbaImg.Bounds(), img, img.Bounds().Min, draw.Src)
+
+	// Now access raw RGBA data
+	stride := rgbaImg.Stride
+
+	//fmt.Println("LEN: ", len(rgbaImg.Pix), numRows, numCols, numRows*numCols*4)
+
+	for col := 0; col < numCols; col++ {
+		for row := 0; row < numRows; row++ {
+			offs := (row * stride) + (col * 4)
+			r8 := float32(rgbaImg.Pix[offs])
+			g8 := float32(rgbaImg.Pix[offs+1])
+			b8 := float32(rgbaImg.Pix[offs+2])
+
 			luma[row*numCols+col] = LUMA_FROM_R_COEFF*r8 + LUMA_FROM_G_COEFF*g8 + LUMA_FROM_B_COEFF*b8
 		}
 	}
 }
 
 // pdqHash256FromFloatLuma generates the hash from luminance data
-func (h *PdqHasher) pdqHash256FromFloatLuma(buffer1, buffer2 []float64, numRows, numCols int, buffer64x64, buffer16x16 []float64) HashAndQuality {
+func (h *PdqHasher) pdqHash256FromFloatLuma(buffer1, buffer2 []float32, numRows, numCols int, buffer64x64, buffer16x16 []float32) HashAndQuality {
 	windowSizeAlongRows := computeJaroszFilterWindowSize(numCols)
 	windowSizeAlongCols := computeJaroszFilterWindowSize(numRows)
 
@@ -169,14 +175,14 @@ func (h *PdqHasher) pdqHash256FromFloatLuma(buffer1, buffer2 []float64, numRows,
 }
 
 // dct64To16 performs DCT transformation from 64x64 to 16x16
-func (h *PdqHasher) dct64To16(A, B []float64) {
+func (h *PdqHasher) dct64To16(A, B []float32) {
 	// Temporary 16x64 matrix
-	T := make([]float64, 16*64)
+	T := make([]float32, 16*64)
 
 	// First multiplication: DCT * A
 	for i := 0; i < 16; i++ {
 		for j := 0; j < 64; j++ {
-			var tij float64
+			var tij float32
 			for k := 0; k < 64; k++ {
 				tij += h.dctMatrix[i*64+k] * A[k*64+j]
 			}
@@ -187,7 +193,7 @@ func (h *PdqHasher) dct64To16(A, B []float64) {
 	// Second multiplication: T * DCT^T
 	for i := 0; i < 16; i++ {
 		for j := 0; j < 16; j++ {
-			var sumk float64
+			var sumk float32
 			for k := 0; k < 64; k++ {
 				sumk += T[i*64+k] * h.dctMatrix[j*64+k]
 			}
@@ -197,9 +203,9 @@ func (h *PdqHasher) dct64To16(A, B []float64) {
 }
 
 // pdqBuffer16x16ToBits converts DCT output to hash bits
-func pdqBuffer16x16ToBits(dctOutput16x16 []float64) *PdqHash256 {
+func pdqBuffer16x16ToBits(dctOutput16x16 []float32) *PdqHash256 {
 	hash := NewPdqHash256()
-	
+
 	// Calculate median using Torben's algorithm
 	dctMedian := torbenMedian(dctOutput16x16)
 
@@ -214,9 +220,9 @@ func pdqBuffer16x16ToBits(dctOutput16x16 []float64) *PdqHash256 {
 }
 
 // computePDQImageDomainQualityMetric calculates quality based on gradients
-func computePDQImageDomainQualityMetric(buffer64x64 []float64) int {
+func computePDQImageDomainQualityMetric(buffer64x64 []float32) int {
 	gradientSum := 0
-	
+
 	// Horizontal gradients
 	for i := 0; i < 63; i++ {
 		for j := 0; j < 64; j++ {
@@ -230,7 +236,7 @@ func computePDQImageDomainQualityMetric(buffer64x64 []float64) int {
 			}
 		}
 	}
-	
+
 	// Vertical gradients
 	for i := 0; i < 64; i++ {
 		for j := 0; j < 63; j++ {
@@ -244,7 +250,7 @@ func computePDQImageDomainQualityMetric(buffer64x64 []float64) int {
 			}
 		}
 	}
-	
+
 	quality := gradientSum / 90
 	if quality > 100 {
 		quality = 100
@@ -253,18 +259,18 @@ func computePDQImageDomainQualityMetric(buffer64x64 []float64) int {
 }
 
 // decimateFloat downsamples from input resolution to 64x64
-func decimateFloat(in []float64, inNumRows, inNumCols int, output []float64) {
+func decimateFloat(in []float32, inNumRows, inNumCols int, output []float32) {
 	for i := 0; i < 64; i++ {
-		ini := int((float64(i)+0.5)*float64(inNumRows)/64)
+		ini := int((float32(i) + 0.5) * float32(inNumRows) / 64)
 		for j := 0; j < 64; j++ {
-			inj := int((float64(j)+0.5)*float64(inNumCols)/64)
+			inj := int((float32(j) + 0.5) * float32(inNumCols) / 64)
 			output[i*64+j] = in[ini*inNumCols+inj]
 		}
 	}
 }
 
 // jaroszFilterFloat applies Jarosz filter for image smoothing
-func jaroszFilterFloat(buffer1, buffer2 []float64, numRows, numCols, windowSizeAlongRows, windowSizeAlongCols, nreps int) {
+func jaroszFilterFloat(buffer1, buffer2 []float32, numRows, numCols, windowSizeAlongRows, windowSizeAlongCols, nreps int) {
 	for i := 0; i < nreps; i++ {
 		boxAlongRowsFloat(buffer1, buffer2, numRows, numCols, windowSizeAlongRows)
 		boxAlongColsFloat(buffer2, buffer1, numRows, numCols, windowSizeAlongCols)
@@ -272,7 +278,7 @@ func jaroszFilterFloat(buffer1, buffer2 []float64, numRows, numCols, windowSizeA
 }
 
 // boxAlongRowsFloat applies 1D box filter along rows
-func boxAlongRowsFloat(input, output []float64, numRows, numCols, windowSize int) {
+func boxAlongRowsFloat(input, output []float32, numRows, numCols, windowSize int) {
 	for i := 0; i < numRows; i++ {
 		box1DFloat(
 			input,
@@ -287,14 +293,14 @@ func boxAlongRowsFloat(input, output []float64, numRows, numCols, windowSize int
 }
 
 // boxAlongColsFloat applies 1D box filter along columns
-func boxAlongColsFloat(input, output []float64, numRows, numCols, windowSize int) {
+func boxAlongColsFloat(input, output []float32, numRows, numCols, windowSize int) {
 	for j := 0; j < numCols; j++ {
 		box1DFloat(input, j, output, j, numRows, numCols, windowSize)
 	}
 }
 
 // box1DFloat performs 1D box filtering
-func box1DFloat(invec []float64, inStartOffset int, outVec []float64, outStartOffset int, vectorLength, stride, fullWindowSize int) {
+func box1DFloat(invec []float32, inStartOffset int, outVec []float32, outStartOffset int, vectorLength, stride, fullWindowSize int) {
 	halfWindowSize := (fullWindowSize + 2) / 2
 	phase1Nreps := halfWindowSize - 1
 	phase2Nreps := fullWindowSize - halfWindowSize + 1
@@ -304,7 +310,7 @@ func box1DFloat(invec []float64, inStartOffset int, outVec []float64, outStartOf
 	li := 0 // Index of left edge of read window
 	ri := 0 // Index of right edge of read window
 	oi := 0 // Index into output vector
-	sum := 0.0
+	sum := float32(0.0)
 	currentWindowSize := 0
 
 	// Phase 1: Initial accumulation
@@ -318,7 +324,7 @@ func box1DFloat(invec []float64, inStartOffset int, outVec []float64, outStartOf
 	for i := 0; i < phase2Nreps; i++ {
 		sum += invec[inStartOffset+ri]
 		currentWindowSize++
-		outVec[outStartOffset+oi] = sum / float64(currentWindowSize)
+		outVec[outStartOffset+oi] = sum / float32(currentWindowSize)
 		ri += stride
 		oi += stride
 	}
@@ -327,7 +333,7 @@ func box1DFloat(invec []float64, inStartOffset int, outVec []float64, outStartOf
 	for i := 0; i < phase3Nreps; i++ {
 		sum += invec[inStartOffset+ri]
 		sum -= invec[inStartOffset+li]
-		outVec[outStartOffset+oi] = sum / float64(currentWindowSize)
+		outVec[outStartOffset+oi] = sum / float32(currentWindowSize)
 		li += stride
 		ri += stride
 		oi += stride
@@ -337,7 +343,7 @@ func box1DFloat(invec []float64, inStartOffset int, outVec []float64, outStartOf
 	for i := 0; i < phase4Nreps; i++ {
 		sum -= invec[inStartOffset+li]
 		currentWindowSize--
-		outVec[outStartOffset+oi] = sum / float64(currentWindowSize)
+		outVec[outStartOffset+oi] = sum / float32(currentWindowSize)
 		li += stride
 		oi += stride
 	}
@@ -348,94 +354,72 @@ func computeJaroszFilterWindowSize(dimensionSize int) int {
 	return (dimensionSize + PDQ_JAROSZ_WINDOW_SIZE_DIVISOR - 1) / PDQ_JAROSZ_WINDOW_SIZE_DIVISOR
 }
 
-// torbenMedian implements Torben's algorithm for finding median
-func torbenMedian(data []float64) float64 {
-	// Create a copy to avoid modifying original
-	arr := make([]float64, len(data))
-	copy(arr, data)
-	
-	n := len(arr)
+// torbenMedian implements Torben's median algorithm
+// This is a direct port of the C++ implementation
+func torbenMedian(m []float32) float32 {
+	n := len(m)
 	if n == 0 {
 		return 0
 	}
-	
-	// For small arrays, use simple sorting
-	if n < 30 {
-		for i := 0; i < n-1; i++ {
-			for j := i + 1; j < n; j++ {
-				if arr[i] > arr[j] {
-					arr[i], arr[j] = arr[j], arr[i]
-				}
-			}
+
+	// Create a copy to avoid modifying original
+	arr := make([]float32, n)
+	copy(arr, m)
+
+	min := arr[0]
+	max := arr[0]
+	for i := 1; i < n; i++ {
+		if arr[i] < min {
+			min = arr[i]
 		}
-		if n%2 == 0 {
-			return (arr[n/2-1] + arr[n/2]) / 2
+		if arr[i] > max {
+			max = arr[i]
 		}
-		return arr[n/2]
 	}
-	
-	// Torben's algorithm for larger arrays
-	low := 0
-	high := n - 1
-	median := (low + high) / 2
-	
+
+	var less, greater, equal int
+	var maxltguess, mingtguess, guess float32
+
 	for {
-		if high <= low {
-			return arr[median]
-		}
-		
-		if high == low+1 {
-			if arr[low] > arr[high] {
-				arr[low], arr[high] = arr[high], arr[low]
+		guess = (min + max) / 2
+		less = 0
+		greater = 0
+		equal = 0
+		maxltguess = min
+		mingtguess = max
+
+		for i := 0; i < n; i++ {
+			if arr[i] < guess {
+				less++
+				if arr[i] > maxltguess {
+					maxltguess = arr[i]
+				}
+			} else if arr[i] > guess {
+				greater++
+				if arr[i] < mingtguess {
+					mingtguess = arr[i]
+				}
+			} else {
+				equal++
 			}
-			return arr[median]
 		}
-		
-		// Find median of low, middle, and high
-		middle := (low + high) / 2
-		if arr[middle] > arr[high] {
-			arr[middle], arr[high] = arr[high], arr[middle]
+
+		if less <= (n+1)/2 && greater <= (n+1)/2 {
+			break
+		} else if less > greater {
+			max = maxltguess
+		} else {
+			min = mingtguess
 		}
-		if arr[low] > arr[high] {
-			arr[low], arr[high] = arr[high], arr[low]
-		}
-		if arr[middle] > arr[low] {
-			arr[middle], arr[low] = arr[low], arr[middle]
-		}
-		
-		// Swap low item to middle position
-		arr[middle], arr[low+1] = arr[low+1], arr[middle]
-		
-		// Nibble from each end towards middle
-		ll := low + 1
-		hh := high
-		for {
-			ll++
-			for arr[low] > arr[ll] {
-				ll++
-			}
-			hh--
-			for arr[hh] > arr[low] {
-				hh--
-			}
-			
-			if hh < ll {
-				break
-			}
-			
-			arr[ll], arr[hh] = arr[hh], arr[ll]
-		}
-		
-		// Swap middle item back
-		arr[low], arr[hh] = arr[hh], arr[low]
-		
-		// Re-set active partition
-		if hh <= median {
-			low = ll
-		}
-		if hh >= median {
-			high = hh - 1
-		}
+	}
+
+	// Calculate the final result based on the C++ logic
+	if less >= (n+1)/2 {
+		return maxltguess
+	} else if less+equal >= (n+1)/2 {
+		return guess
+	} else {
+		return mingtguess
 	}
 }
 
@@ -443,18 +427,18 @@ func torbenMedian(data []float64) float64 {
 func resizeImage(src image.Image, width, height int) image.Image {
 	bounds := src.Bounds()
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
-	
-	xRatio := float64(bounds.Dx()) / float64(width)
-	yRatio := float64(bounds.Dy()) / float64(height)
-	
+
+	xRatio := float32(bounds.Dx()) / float32(width)
+	yRatio := float32(bounds.Dy()) / float32(height)
+
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			srcX := int(float64(x) * xRatio)
-			srcY := int(float64(y) * yRatio)
+			srcX := int(float32(x) * xRatio)
+			srcY := int(float32(y) * yRatio)
 			dst.Set(x, y, src.At(bounds.Min.X+srcX, bounds.Min.Y+srcY))
 		}
 	}
-	
+
 	return dst
 }
 
