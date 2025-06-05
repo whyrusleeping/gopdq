@@ -15,25 +15,25 @@ import (
 	"strings"
 	"time"
 
-	"github.com/why/gopdq"
+	"github.com/whyrusleeping/gopdq"
 )
 
 type BenchmarkResult struct {
-	ImageName     string
-	ImageSize     string
-	Pixels        int
-	HashesPerSec  float64
-	AvgHashTime   float64
-	Quality       int
-	Hash          string
+	ImageName    string
+	ImageSize    string
+	Pixels       int
+	HashesPerSec float64
+	AvgHashTime  float64
+	Quality      int
+	Hash         string
 }
 
 func main() {
 	// Parse command line arguments
 	var (
-		verbose = flag.Bool("v", false, "Verbose output")
+		verbose   = flag.Bool("v", false, "Verbose output")
 		numHashes = flag.Int("n", 0, "Total number of hashes to generate (0 means all images)")
-		help = flag.Bool("h", false, "Show help")
+		help      = flag.Bool("h", false, "Show help")
 	)
 	flag.Parse()
 
@@ -109,7 +109,7 @@ func benchmarkSynthetic(verbose bool) {
 
 func generateTestImages(dir string) []string {
 	var paths []string
-	
+
 	// Different image sizes to test
 	sizes := []struct {
 		name   string
@@ -141,7 +141,7 @@ func generateTestImages(dir string) []string {
 		for _, pattern := range patterns {
 			filename := fmt.Sprintf("%s_%s.png", size.name, pattern.name)
 			path := filepath.Join(dir, filename)
-			
+
 			img := pattern.gen(size.width, size.height)
 			if err := savePNG(img, path); err != nil {
 				log.Printf("Failed to save %s: %v", filename, err)
@@ -179,7 +179,7 @@ func generateGradientImage(width, height int) image.Image {
 func generateCheckerboardImage(width, height int) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	squareSize := max(width/32, 8)
-	
+
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			if (x/squareSize+y/squareSize)%2 == 0 {
@@ -195,7 +195,7 @@ func generateCheckerboardImage(width, height int) image.Image {
 func generateNoiseImage(width, height int) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	rng := rand.New(rand.NewSource(42)) // Fixed seed for reproducibility
-	
+
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			intensity := uint8(rng.Intn(256))
@@ -207,17 +207,17 @@ func generateNoiseImage(width, height int) image.Image {
 
 func generateComplexImage(width, height int) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	
+
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			// Create a complex pattern with sinusoidal waves
 			fx := float64(x) / float64(width) * 4 * math.Pi
 			fy := float64(y) / float64(height) * 4 * math.Pi
-			
+
 			r := uint8((math.Sin(fx) + 1) / 2 * 255)
 			g := uint8((math.Sin(fy) + 1) / 2 * 255)
 			b := uint8((math.Sin(fx+fy) + 1) / 2 * 255)
-			
+
 			img.Set(x, y, color.RGBA{r, g, b, 255})
 		}
 	}
@@ -230,55 +230,55 @@ func savePNG(img image.Image, path string) error {
 		return err
 	}
 	defer file.Close()
-	
+
 	return png.Encode(file, img)
 }
 
 func benchmarkImage(hasher *gopdq.PdqHasher, imagePath string) BenchmarkResult {
 	// Number of runs for timing
 	const numRuns = 10
-	
+
 	// Get image info first
 	file, err := os.Open(imagePath)
 	if err != nil {
 		log.Printf("Failed to open %s: %v", imagePath, err)
 		return BenchmarkResult{}
 	}
-	
+
 	img, _, err := image.Decode(file)
 	file.Close()
 	if err != nil {
 		log.Printf("Failed to decode %s: %v", imagePath, err)
 		return BenchmarkResult{}
 	}
-	
+
 	bounds := img.Bounds()
 	pixels := bounds.Dx() * bounds.Dy()
-	
+
 	// Warm up
 	hasher.FromFile(imagePath)
-	
+
 	// Benchmark runs
 	var totalTime time.Duration
 	var lastResult *gopdq.HashResult
-	
+
 	for i := 0; i < numRuns; i++ {
 		start := time.Now()
 		result, err := hasher.FromFile(imagePath)
 		duration := time.Since(start)
-		
+
 		if err != nil {
 			log.Printf("Failed to hash %s: %v", imagePath, err)
 			return BenchmarkResult{}
 		}
-		
+
 		totalTime += duration
 		lastResult = result
 	}
-	
+
 	avgTime := totalTime.Seconds() / float64(numRuns)
 	hashesPerSec := 1.0 / avgTime
-	
+
 	return BenchmarkResult{
 		ImageName:    filepath.Base(imagePath),
 		ImageSize:    fmt.Sprintf("%dx%d", bounds.Dx(), bounds.Dy()),
@@ -294,14 +294,14 @@ func displayResults(results []BenchmarkResult) {
 	fmt.Println("\n" + strings.Repeat("=", 80))
 	fmt.Println("BENCHMARK RESULTS")
 	fmt.Println(strings.Repeat("=", 80))
-	
+
 	fmt.Printf("%-25s %-12s %-10s %-12s %-8s %-8s\n",
 		"Image", "Size", "Pixels", "Hashes/sec", "Avg(ms)", "Quality")
 	fmt.Println(strings.Repeat("-", 80))
-	
+
 	totalHashes := 0.0
 	totalPixels := 0
-	
+
 	for _, result := range results {
 		fmt.Printf("%-25s %-12s %-10d %-12.2f %-8.1f %-8d\n",
 			result.ImageName,
@@ -310,20 +310,20 @@ func displayResults(results []BenchmarkResult) {
 			result.HashesPerSec,
 			result.AvgHashTime*1000,
 			result.Quality)
-		
+
 		totalHashes += result.HashesPerSec
 		totalPixels += result.Pixels
 	}
-	
+
 	fmt.Println(strings.Repeat("-", 80))
 	fmt.Printf("Average hashes/sec: %.2f\n", totalHashes/float64(len(results)))
 	fmt.Printf("Total pixels processed: %d\n", totalPixels)
-	
+
 	// Find fastest and slowest
 	if len(results) > 0 {
 		fastest := results[0]
 		slowest := results[0]
-		
+
 		for _, result := range results[1:] {
 			if result.HashesPerSec > fastest.HashesPerSec {
 				fastest = result
@@ -332,11 +332,11 @@ func displayResults(results []BenchmarkResult) {
 				slowest = result
 			}
 		}
-		
+
 		fmt.Printf("\nFastest: %s (%.2f hashes/sec)\n", fastest.ImageName, fastest.HashesPerSec)
 		fmt.Printf("Slowest: %s (%.2f hashes/sec)\n", slowest.ImageName, slowest.HashesPerSec)
 	}
-	
+
 	fmt.Println("\nSample hashes:")
 	for i, result := range results {
 		if i < 5 { // Show first 5 hashes
@@ -398,8 +398,8 @@ func benchmarkDirectory(dirPath string, verbose bool, numHashes int) {
 
 		numSuccesses++
 		processedCount++
-		totalReadSeconds += result.Stats.ReadSeconds
-		totalHashSeconds += result.Stats.HashSeconds
+		totalReadSeconds += float64(result.Stats.ReadSeconds)
+		totalHashSeconds += float64(result.Stats.HashSeconds)
 		hashes = append(hashes, result.Hash.String())
 
 		if verbose {
@@ -427,7 +427,7 @@ func benchmarkDirectory(dirPath string, verbose bool, numHashes int) {
 	fmt.Printf("PHOTO COUNT:                    %d\n", numSuccesses)
 	fmt.Printf("ERROR COUNT:                    %d\n", numErrors)
 	fmt.Printf("TIME SPENT HASHING PHOTOS (SECONDS):   %.6f\n", totalHashSeconds)
-	
+
 	photosHashedPerSecond := 0.0
 	if totalHashSeconds > 0 {
 		photosHashedPerSecond = float64(numSuccesses) / totalHashSeconds
@@ -435,7 +435,7 @@ func benchmarkDirectory(dirPath string, verbose bool, numHashes int) {
 	fmt.Printf("PHOTOS HASHED PER SECOND:       %.6f\n", photosHashedPerSecond)
 
 	fmt.Printf("TIME SPENT READING PHOTOS (SECONDS):   %.6f\n", totalReadSeconds)
-	
+
 	photosReadPerSecond := 0.0
 	if totalReadSeconds > 0 {
 		photosReadPerSecond = float64(numSuccesses) / totalReadSeconds
@@ -443,7 +443,7 @@ func benchmarkDirectory(dirPath string, verbose bool, numHashes int) {
 	fmt.Printf("PHOTOS READ PER SECOND:         %.6f\n", photosReadPerSecond)
 
 	fmt.Printf("TOTAL BENCHMARK TIME (SECONDS): %.6f\n", totalDuration.Seconds())
-	
+
 	totalPhotosPerSecond := 0.0
 	if totalDuration.Seconds() > 0 {
 		totalPhotosPerSecond = float64(numSuccesses) / totalDuration.Seconds()
@@ -463,7 +463,7 @@ func benchmarkDirectory(dirPath string, verbose bool, numHashes int) {
 
 func findImageFiles(dirPath string) ([]string, error) {
 	var imageFiles []string
-	
+
 	// Supported image extensions
 	imageExts := map[string]bool{
 		".jpg":  true,
@@ -501,3 +501,4 @@ func max(a, b int) int {
 	}
 	return b
 }
+

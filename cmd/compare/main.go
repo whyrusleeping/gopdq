@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/why/gopdq"
+	"github.com/whyrusleeping/gopdq"
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 	}
 
 	path := os.Args[1]
-	
+
 	// Check if path is file or directory
 	info, err := os.Stat(path)
 	if err != nil {
@@ -62,7 +62,7 @@ func main() {
 		}
 
 		goHash := result.Hash.String()
-		
+
 		// Compare hashes
 		bitDifferences := countBitDifferences(facebookHash, goHash)
 		totalBitDifferences += bitDifferences
@@ -72,16 +72,16 @@ func main() {
 		if bitDifferences == 0 {
 			fmt.Printf("✅ %s: EXACT MATCH\n", filepath.Base(imagePath))
 		} else {
-			fmt.Printf("⚠️  %s: %d bit differences (%.1f%%)\n", 
-				filepath.Base(imagePath), 
-				bitDifferences, 
+			fmt.Printf("⚠️  %s: %d bit differences (%.1f%%)\n",
+				filepath.Base(imagePath),
+				bitDifferences,
 				float64(bitDifferences)/256.0*100)
 		}
-		
+
 		fmt.Printf("   Facebook: %s\n", facebookHash)
 		fmt.Printf("   Go:       %s\n", goHash)
 		fmt.Printf("   Quality:  %d\n", result.Quality)
-		
+
 		if bitDifferences > 0 && len(imageFiles) == 1 {
 			// Show detailed bit analysis for single image
 			showBitAnalysis(facebookHash, goHash)
@@ -96,10 +96,10 @@ func main() {
 	fmt.Printf("Images processed: %d\n", successfulComparisons)
 	if successfulComparisons > 0 {
 		avgBitDifferences := float64(totalBitDifferences) / float64(successfulComparisons)
-		fmt.Printf("Average bit differences: %.1f bits (%.2f%%)\n", 
-			avgBitDifferences, 
+		fmt.Printf("Average bit differences: %.1f bits (%.2f%%)\n",
+			avgBitDifferences,
 			avgBitDifferences/256.0*100)
-		
+
 		if totalBitDifferences == 0 {
 			fmt.Println("🎉 All hashes match exactly!")
 		} else {
@@ -143,7 +143,7 @@ func countBitDifferences(hash1, hash2 string) int {
 			val1 := hexCharToInt(hash1[i])
 			val2 := hexCharToInt(hash2[i])
 			xor := val1 ^ val2
-			
+
 			// Count set bits in XOR result
 			for xor > 0 {
 				if xor&1 == 1 {
@@ -171,36 +171,36 @@ func hexCharToInt(c byte) int {
 
 func showBitAnalysis(hash1, hash2 string) {
 	fmt.Println("   Bit Analysis:")
-	
+
 	differentPositions := []int{}
 	for i := 0; i < len(hash1); i++ {
 		if hash1[i] != hash2[i] {
 			differentPositions = append(differentPositions, i)
 		}
 	}
-	
+
 	fmt.Printf("   Different hex positions: %v\n", differentPositions)
-	
+
 	// Show first few differences in detail
 	maxShow := 5
 	if len(differentPositions) > maxShow {
 		fmt.Printf("   (showing first %d of %d differences)\n", maxShow, len(differentPositions))
 	}
-	
+
 	for i, pos := range differentPositions {
 		if i >= maxShow {
 			break
 		}
 		val1 := hexCharToInt(hash1[pos])
 		val2 := hexCharToInt(hash2[pos])
-		fmt.Printf("     Pos %d: %c (%04b) vs %c (%04b) - XOR: %04b\n", 
+		fmt.Printf("     Pos %d: %c (%04b) vs %c (%04b) - XOR: %04b\n",
 			pos, hash1[pos], val1, hash2[pos], val2, val1^val2)
 	}
 }
 
 func findImageFiles(dirPath string) ([]string, error) {
 	var imageFiles []string
-	
+
 	imageExts := map[string]bool{
 		".jpg":  true,
 		".jpeg": true,
@@ -230,3 +230,4 @@ func findImageFiles(dirPath string) ([]string, error) {
 
 	return imageFiles, err
 }
+

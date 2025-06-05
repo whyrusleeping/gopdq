@@ -145,8 +145,8 @@ func (h *PdqHasher) fillFloatLumaFromImage(img image.Image, luma []float32) {
 
 // pdqHash256FromFloatLuma generates the hash from luminance data
 func (h *PdqHasher) pdqHash256FromFloatLuma(buffer1, buffer2 []float32, numRows, numCols int, buffer64x64, buffer16x16 []float32) HashAndQuality {
-	windowSizeAlongRows := computeJaroszFilterWindowSize(numCols)
-	windowSizeAlongCols := computeJaroszFilterWindowSize(numRows)
+	windowSizeAlongRows := computeJaroszFilterWindowSize(numCols, 64)
+	windowSizeAlongCols := computeJaroszFilterWindowSize(numRows, 64)
 
 	jaroszFilterFloat(
 		buffer1,
@@ -182,7 +182,7 @@ func (h *PdqHasher) dct64To16(A, B []float32) {
 			for k := 0; k < 64; k++ {
 				tij += h.dctMatrix[i*64+k] * A[k*64+j]
 			}
-			T[i*64+j] = sumk
+			T[i*64+j] = tij
 		}
 	}
 
