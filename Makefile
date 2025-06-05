@@ -70,7 +70,7 @@ setup: check-deps
 build:
 	@echo "Building Go PDQ implementation..."
 	@go build -o $(BENCHMARK_DIR)/pdq-benchmark $(BENCHMARK_DIR)/main.go
-	@go build -o $(BENCHMARK_DIR)/pdq-compare $(BENCHMARK_DIR)/compare.go
+	@go build -o $(BENCHMARK_DIR)/pdq-compare cmd/compare/main.go
 	@echo "✅ Go implementation built"
 
 # Run Go unit tests
@@ -97,7 +97,7 @@ compare:
 		exit 1; \
 	fi
 	@echo "Comparing implementations on: $(IMAGE)"
-	@cd $(BENCHMARK_DIR) && go run compare.go "$(IMAGE)"
+	@cd $(BENCHMARK_DIR) && go run ../cmd/compare/main.go "$(IMAGE)"
 
 # Compare directory of images
 compare-dir:
@@ -111,7 +111,7 @@ compare-dir:
 		exit 1; \
 	fi
 	@echo "Comparing implementations on directory: $(DIR)"
-	@cd $(BENCHMARK_DIR) && go run compare.go "$(DIR)"
+	@cd $(BENCHMARK_DIR) && go run ../cmd/compare/main.go "$(DIR)"
 
 # Validate with known test images from Facebook's test suite
 validate:
@@ -121,7 +121,7 @@ validate:
 	fi
 	@if [ -d "$(FACEBOOK_PDQ_DIR)/pdq/data/reg-test-input" ]; then \
 		echo "Running validation on Facebook's test images..."; \
-		cd $(BENCHMARK_DIR) && go run compare.go "../$(FACEBOOK_PDQ_DIR)/pdq/data/reg-test-input"; \
+		cd $(BENCHMARK_DIR) && go run ../cmd/compare/main.go "../$(FACEBOOK_PDQ_DIR)/pdq/data/reg-test-input"; \
 	else \
 		echo "⚠️  Facebook test images not found. Using synthetic benchmark..."; \
 		$(MAKE) benchmark; \

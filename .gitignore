@@ -1,0 +1,9 @@
+# Build artifacts
+benchmark/pdq-benchmark
+benchmark/pdq-compare
+benchmark/benchmark_images/
+benchmark/*.png
+benchmark/*.jpg
+
+# Facebook PDQ implementation (external repository)
+facebook-pdq/

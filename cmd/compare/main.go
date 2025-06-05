@@ -110,7 +110,7 @@ func main() {
 
 func getFacebookHash(imagePath string) (string, error) {
 	// Check if Facebook's pdq-photo-hasher exists
-	facebookHasher := "facebook-pdq/pdq/cpp/pdq-photo-hasher"
+	facebookHasher := "../facebook-pdq/pdq/cpp/pdq-photo-hasher"
 	if _, err := os.Stat(facebookHasher); os.IsNotExist(err) {
 		return "", fmt.Errorf("Facebook's pdq-photo-hasher not found at %s. Run 'make setup' first", facebookHasher)
 	}
